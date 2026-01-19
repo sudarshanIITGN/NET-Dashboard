@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NTA Answer Checker + Analytics Dashboard (Static)</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      line-height: 1.3;
+      color: #111;
+    }
+
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    .muted { color: #555; font-size: 13px; margin-bottom: 18px; }
+
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 14px;
+      background: #fff;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 12px;
+    }
+
+    .col-12 { grid-column: span 12; }
+    .col-6 { grid-column: span 6; }
+    .col-4 { grid-column: span 4; }
+    .col-3 { grid-column: span 3; }
+
+    @media (max-width: 900px) {
+      .col-6, .col-4, .col-3 { grid-column: span 12; }
+    }
+
+    label { font-weight: 600; font-size: 13px; display:block; margin-bottom: 6px; }
+    input[type="file"], select, button {
+      width: 100%;
+      padding: 10px;
+      font-size: 14px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 10px;
+    }
+    .kpi {
+      grid-column: span 3;
+      border: 1px solid #eee;
+      border-radius: 10px;
+      padding: 12px;
+      background: #fafafa;
+    }
+
+    /* KPI color coding by paper */
+    .kpi.paper1 {
+      background: rgba(54, 162, 235, 0.55);
+      border: 1px solid rgba(54, 162, 235, 0.35);
+    }
+
+    .kpi.paper2 {
+      background: rgba(75, 192, 120, 0.55);
+      border: 1px solid rgba(75, 192, 120, 0.35);
+    }
+
+    @media (max-width: 900px) {
+      .kpi { grid-column: span 6; }
+    }
+    @media (max-width: 520px) {
+      .kpi { grid-column: span 12; }
+    }
+
+    .kpi .label { font-size: 12px; color: #555; }
+    .kpi .value { font-size: 22px; font-weight: 800; margin-top: 6px; }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .row > * { flex: 1; min-width: 200px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f2f2f2;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .improvement-card p{
+      margin: 10px 0;
+      line-height: 1.4;
+      grid-column: span 12;
+      width: 100%;
+    }
+    .pill {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid #ddd;
+      background: #f7f7f7;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+
+    .success { background: #e9f7ef; border-color: #bfe6cf; }
+    .danger { background: #fdeeee; border-color: #f3b7b7; }
+    .warn { background: #fff7e6; border-color: #ffe0a8; }
+
+    .small { font-size: 12px; color: #555; }
+    .hidden { display: none; }
+
+    .chartWrap {
+      width: 100%;
+      height: 320px;
+    }
+
+    /* ✅ Mobile: give more height to avoid squishing */
+    @media (max-width: 520px) {
+      .chartWrap {
+        height: 440px;
+      }
+    }
+
+    canvas { width: 100% !important; height: 100% !important; }
+  </style>
+</head>
+<body>
+
+  <h1>NTA Answer Checker + Analytics Dashboard</h1>
+  <div class="muted">
+    Upload your <b>NET answer PDF</b> and select the relevant <b>Answer Key</b> (English/Other Subject). <br>
+    None of your data is stored. This runs fully in your browser. 
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div class="col-6">
+        <label>Upload Response PDF</label>
+        <input type="file" id="pdfFile" accept="application/pdf"/>
+      </div>
+
+      <div class="col-6">
+        <label>Select Answer Key</label>
+        <select id="answerKeySelect">
+          <option value="">-- Select --</option>
+          <!--option value="Book2.xlsx">English (Book2.xlsx)</option-->
+          <option value="Book3.xlsx">Archaeology (Book3.xlsx)</option>
+          <option value="New_Book_2.xlsx">English</option>
+        </select>
+        <div class="small" style="margin-top:6px;">
+          Keep the selected Excel file in the <b>same folder</b> as this HTML.
+        </div>
+      </div>
+
+      <div class="col-12">
+        <button id="processBtn">Process PDF + Show Analytics</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="statusCard" class="card hidden">
+    <div id="statusText" class="small"></div>
+  </div>
+
+  <div id="kpiCard" class="card hidden">
+    <div class="kpis">
+      <div class="kpi"><div class="label">Total Questions</div><div class="value" id="kpiTotal">-</div></div>
+      <div class="kpi"><div class="label">Attempted</div><div class="value" id="kpiAttempted">-</div></div>
+      <div class="kpi"><div class="label">Correct</div><div class="value" id="kpiCorrect">-</div></div>
+      <div class="kpi"><div class="label">Wrong</div><div class="value" id="kpiWrong">-</div></div>
+
+      <div class="kpi paper1"><div class="label">Paper 1 Correct</div><div class="value" id="kpiP1Correct">-</div></div>
+      <div class="kpi paper1">
+        <div class="label">Paper 1 Accuracy</div>
+        <div class="value" id="kpiP1Accuracy">-</div>
+        <div class="small">Accuracy = Correct ÷ Attempted</div>
+      </div>
+
+      <div class="kpi paper2"><div class="label">Paper 2 Correct</div><div class="value" id="kpiP2Correct">-</div></div>
+      <div class="kpi paper2">
+        <div class="label">Paper 2 Accuracy</div>
+        <div class="value" id="kpiP2Accuracy">-</div>
+        <div class="small">Accuracy = Correct ÷ Attempted</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="chartsCard" class="card hidden">
+    <div class="grid">
+      <div class="col-6">
+        <div style="font-weight:700; margin-bottom:6px;">Accuracy by Question Genre</div>
+        <div class="chartWrap"><canvas id="genreAccuracyChart"></canvas></div>
+      </div>
+      <div class="col-6">
+        <div style="font-weight:700; margin-bottom:6px;">Accuracy by Question Type</div>
+        <div class="chartWrap"><canvas id="typeAccuracyChart"></canvas></div>
+      </div>
+      <div class="card improvement-card col-12">
+        <h3>Areas of Improvement</h3>
+
+        <p id="improveGenres"></p>
+        <p id="improveTypes"></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="tableCard" class="card hidden">
+    <div class="row">
+      <div>
+        <label>View filter</label>
+        <select id="resultFilter">
+          <option value="all">All</option>
+          <option value="wrong">Wrong only</option>
+          <option value="unattempted">Unattempted only</option>
+          <option value="correct">Correct only</option>
+          <option value="paper1">Paper 1 only</option>
+          <option value="paper2">Paper 2 only</option>
+        </select>
+      </div>
+      <div>
+        <label>Search (QuestionID / Genre / Subject)</label>
+        <input type="text" id="searchBox" placeholder="type to filter..."/>
+      </div>
+      <div>
+        <label>Download</label>
+        <button id="downloadBtn" disabled>Download Results (Excel)</button>
+      </div>
+    </div>
+
+    <div style="overflow:auto; max-height: 520px;">
+      <table id="resultTable">
+        <thead>
+          <tr>
+            <th>QuestionID</th>
+            <th>Subject</th>
+            <th>Question Type</th>
+            <th>Question Genre</th>
+            <th>Paper</th>
+            <th>Chosen</th>
+            <th>Correct</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+  const processBtn = document.getElementById("processBtn");
+  const pdfFileInput = document.getElementById("pdfFile");
+  const answerKeySelect = document.getElementById("answerKeySelect");
+  const statusCard = document.getElementById("statusCard");
+  const statusText = document.getElementById("statusText");
+
+  const kpiCard = document.getElementById("kpiCard");
+  const chartsCard = document.getElementById("chartsCard");
+  const tableCard = document.getElementById("tableCard");
+
+  const resultFilter = document.getElementById("resultFilter");
+  const searchBox = document.getElementById("searchBox");
+  const downloadBtn = document.getElementById("downloadBtn");
+
+  const kpiTotal = document.getElementById("kpiTotal");
+  const kpiAttempted = document.getElementById("kpiAttempted");
+  const kpiCorrect = document.getElementById("kpiCorrect");
+  const kpiWrong = document.getElementById("kpiWrong");
+  const kpiP1Correct = document.getElementById("kpiP1Correct");
+  const kpiP1Accuracy = document.getElementById("kpiP1Accuracy");
+  const kpiP2Correct = document.getElementById("kpiP2Correct");
+  const kpiP2Accuracy = document.getElementById("kpiP2Accuracy");
+
+  let finalData = [];
+  let charts = {};
+
+  function setStatus(msg) {
+    statusCard.classList.remove("hidden");
+    statusText.innerText = msg;
+  }
+
+  async function extractPdfText(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      fullText += content.items.map(item => item.str).join(" ") + "\n";
+    }
+    return fullText;
+  }
+
+  // ✅ Robust Extract: Split text into chunks anchored at each Question ID
+  function extractResponses(text) {
+    const parts = text.split(/Question ID\s*:\s*(\d+)/g);
+    const data = [];
+
+    for (let i = 1; i < parts.length; i += 2) {
+      const qid = (parts[i] || "").trim();
+      const chunk = parts[i + 1] || "";
+
+      if (!qid) continue;
+
+      const statusMatch = chunk.match(/Status\s*:\s*([A-Za-z ]+)/i);
+      const status = statusMatch ? String(statusMatch[1]).trim() : "";
+
+      const chosenMatch = chunk.match(/Chosen Option\s*:\s*(\d+)/i);
+      const chosen = chosenMatch ? String(chosenMatch[1]).trim() : "";
+
+      data.push({
+        QuestionID: qid,
+        Status: status,
+        ChosenOption: chosen
+      });
+    }
+    return data;
+  }
+
+  async function fetchExcelAsJson(filename) {
+    const res = await fetch(filename);
+    if (!res.ok) throw new Error("Could not fetch answer key file: " + filename);
+
+    const buf = await res.arrayBuffer();
+    const workbook = XLSX.read(buf, { type: "array" });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    return XLSX.utils.sheet_to_json(sheet);
+  }
+
+  function normalizeKeyRow(row) {
+    const qid = row["QuestionID"] ?? row["Question ID"] ?? row["Question Id"] ?? row["QID"];
+    const correct = row["Correct Option(s)"] ?? row["Correct Option"] ?? row["Correct"] ?? row["Answer"];
+
+    return {
+      QuestionID: qid !== undefined ? String(qid).trim() : "",
+      Subject: row["Subject"] !== undefined ? String(row["Subject"]).trim() : "",
+      QuestionType: row["Question Type"] !== undefined ? String(row["Question Type"]).trim() : "",
+      QuestionGenre: row["Question Genre"] !== undefined ? String(row["Question Genre"]).trim() : "",
+      Paper: row["Paper"] !== undefined ? String(row["Paper"]).trim() : "",
+      CorrectOption: correct !== undefined ? String(correct).trim() : ""
+    };
+  }
+
+  function computeResult(chosen, correct) {
+    if (chosen === null || chosen === undefined || String(chosen).trim() === "") return "Unattempted";
+    if (correct === null || correct === undefined || String(correct).trim() === "") return "Unknown";
+    return String(chosen).trim() === String(correct).trim() ? "Correct" : "Wrong";
+  }
+
+  function destroyCharts() {
+    Object.values(charts).forEach(ch => {
+      try { ch.destroy(); } catch(e) {}
+    });
+    charts = {};
+  }
+
+  function buildCharts(rows) {
+    destroyCharts();
+
+    const isMobile = window.innerWidth <= 520;
+
+    // helper: truncate text safely
+    function truncateText(ctx, text, maxWidth) {
+      if (!text) return "";
+      if (ctx.measureText(text).width <= maxWidth) return text;
+
+      let t = text;
+      while (t.length > 0 && ctx.measureText(t + "…").width > maxWidth) {
+        t = t.slice(0, -1);
+      }
+      return t.length ? t + "…" : "";
+    }
+
+    // inline plugin (NO external install)
+    const inBarLabelPlugin = {
+      id: "inBarLabelPlugin",
+      afterDatasetsDraw(chart) {
+        if (!isMobile) return;
+
+        const { ctx, chartArea } = chart;
+        const labels = chart.data.labels || [];
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data) return;
+
+        ctx.save();
+        ctx.font = "12px Arial";
+        ctx.textBaseline = "middle";
+
+        meta.data.forEach((bar, i) => {
+          const label = labels[i] || "";
+          if (!label) return;
+
+          const barStartX = chartArea.left;
+          const barEndX = bar.x;
+          const barY = bar.y;
+
+          const barWidth = barEndX - barStartX;
+          const pad = 8;
+
+          // max width *inside* the bar
+          const insideMax = Math.max(0, barWidth - pad * 2);
+
+          if (insideMax >= 30) {
+            ctx.fillStyle = "#111";
+            const txt = truncateText(ctx, label, insideMax);
+            ctx.fillText(txt, barStartX + pad, barY);
+          } else {
+            // if bar too small, put text outside (still readable)
+            ctx.fillStyle = "#111";
+            const outsideMax = chartArea.right - (barEndX + 8);
+            const txt = truncateText(ctx, label, Math.max(50, outsideMax));
+            ctx.fillText(txt, barEndX + 8, barY);
+          }
+        });
+
+        ctx.restore();
+      }
+    };
+
+    // -------- Genre chart data
+    const byGenre = {};
+    const genreToPaper = {};
+
+    rows.forEach(r => {
+      const g = r.QuestionGenre || "Unknown";
+      if (!byGenre[g]) byGenre[g] = { attempted: 0, correct: 0 };
+
+      if (r.Result !== "Unattempted") byGenre[g].attempted += 1;
+      if (r.Result === "Correct") byGenre[g].correct += 1;
+
+      if (!genreToPaper[g] && r.Paper) genreToPaper[g] = r.Paper;
+    });
+
+    const genreEntries = Object.keys(byGenre)
+      .map(g => {
+        const a = byGenre[g].attempted;
+        const acc = a === 0 ? 0 : Math.round((byGenre[g].correct / a) * 100);
+        return { genre: g, acc };
+      })
+      .sort((a, b) => b.acc - a.acc);
+
+    const genreLabelsFull = genreEntries.map(e => e.genre);
+    const genreAcc = genreEntries.map(e => e.acc);
+
+    const genreColors = genreLabelsFull.map(g => {
+      const p = (genreToPaper[g] || "").toLowerCase();
+      if (p.includes("paper 1")) return "rgba(54, 162, 235, 0.55)";
+      if (p.includes("paper 2")) return "rgba(75, 192, 120, 0.55)";
+      return "gray";
+    });
+
+    charts.genreAccuracy = new Chart(document.getElementById("genreAccuracyChart"), {
+      type: "bar",
+      data: {
+        labels: genreLabelsFull,
+        datasets: [{ label: "Accuracy %", data: genreAcc, backgroundColor: genreColors }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        indexAxis: isMobile ? "y" : "x",
+        layout: { padding: { left: 14, right: 14, top: 10, bottom: 10 } },
+        scales: {
+          x: {
+            beginAtZero: true,
+            max: 100,
+            ticks: { display: true, stepSize: 10 },
+            grid: { display: true }
+          },
+          y: {
+            ticks: { display: !isMobile },
+            grid: { display: false }
+          }
+        },
+        plugins: {
+          tooltip: { enabled: true },
+          legend: { display: !isMobile }
+        }
+      },
+      plugins: [inBarLabelPlugin]
+    });
+
+    // -------- Type chart data
+    const byType = {};
+    rows.forEach(r => {
+      const t = r.QuestionType || "Unknown";
+      if (!byType[t]) byType[t] = { attempted: 0, correct: 0 };
+
+      if (r.Result !== "Unattempted") byType[t].attempted += 1;
+      if (r.Result === "Correct") byType[t].correct += 1;
+    });
+
+    const typeEntries = Object.keys(byType)
+      .map(t => {
+        const a = byType[t].attempted;
+        const acc = a === 0 ? 0 : Math.round((byType[t].correct / a) * 100);
+        return { type: t, acc };
+      })
+      .sort((a, b) => b.acc - a.acc);
+
+    const typeLabels = typeEntries.map(e => e.type);
+    const typeAcc = typeEntries.map(e => e.acc);
+
+    charts.typeAccuracy = new Chart(document.getElementById("typeAccuracyChart"), {
+      type: "bar",
+      data: {
+        labels: typeLabels,
+        datasets: [{ label: "Accuracy %", data: typeAcc, backgroundColor: "rgba(255, 205, 86, 0.60)" }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        indexAxis: isMobile ? "y" : "x",
+        layout: { padding: { left: 14, right: 14, top: 10, bottom: 10 } },
+        scales: {
+          x: {
+            beginAtZero: true,
+            max: 100,
+            ticks: { display: true, stepSize: 10 },
+            grid: { display: true }
+          },
+          y: {
+            ticks: { display: !isMobile },
+            grid: { display: false }
+          }
+        },
+        plugins: {
+          tooltip: { enabled: true },
+          legend: { display: !isMobile }
+        }
+      },
+      plugins: [inBarLabelPlugin]
+    });
+    //--------------Areas of Improvement Card text
+    const worstGenres = genreEntries
+      .slice(-8)
+      .map(x => x.genre);
+
+    const worstTypes = typeEntries
+      .slice(-2)
+      .map(x => x.type);
+
+    const genreText = worstGenres.length
+      ? `These genres are among the lowest accuracy ones, and need improvement: <b>${worstGenres.join(", ")}</b>.`
+      : `Not enough genre data to highlight improvement areas.`;
+
+    const typeText = worstTypes.length
+      ? `These question types are the most frequently mistaken types, and should be worked upon: <b>${worstTypes.join(", ")}</b>.`
+      : `Not enough question-type data to highlight improvement areas.`;
+
+    const gEl = document.getElementById("improveGenres");
+    const tEl = document.getElementById("improveTypes");
+
+    if (gEl) gEl.innerHTML = genreText;
+    if (tEl) tEl.innerHTML = typeText;
+  }
+
+  function updateKPIs(rows, keyFileName) {
+    const total = rows.length;
+    const attempted = rows.filter(r => r.Result !== "Unattempted").length;
+    const correct = rows.filter(r => r.Result === "Correct").length;
+    const wrong = rows.filter(r => r.Result === "Wrong").length;
+
+    const p1Rows = rows.filter(r => (r.Paper || "").toLowerCase().includes("paper 1"));
+    const p2Rows = rows.filter(r => (r.Paper || "").toLowerCase().includes("paper 2"));
+
+    const p1Attempted = p1Rows.filter(r => r.Result !== "Unattempted").length;
+    const p2Attempted = p2Rows.filter(r => r.Result !== "Unattempted").length;
+
+    const p1Correct = p1Rows.filter(r => r.Result === "Correct").length;
+    const p2Correct = p2Rows.filter(r => r.Result === "Correct").length;
+
+    const p1Acc = p1Attempted === 0 ? 0 : Math.round((p1Correct / p1Attempted) * 100);
+    const p2Acc = p2Attempted === 0 ? 0 : Math.round((p2Correct / p2Attempted) * 100);
+
+    kpiTotal.innerText = total;
+    kpiAttempted.innerText = attempted;
+    kpiCorrect.innerText = correct;
+    kpiWrong.innerText = wrong;
+
+    kpiP1Correct.innerText = `${p1Correct}/50`;
+    kpiP1Accuracy.innerText = p1Acc + "%";
+    kpiP2Correct.innerText = `${p2Correct}/100`;
+    kpiP2Accuracy.innerText = p2Acc + "%";
+
+    kpiCard.classList.remove("hidden");
+  }
+
+  function renderTable(rows) {
+    const tbody = document.querySelector("#resultTable tbody");
+    tbody.innerHTML = "";
+
+    rows.forEach(r => {
+      const tr = document.createElement("tr");
+
+      const resClass = r.Result === "Correct" ? "success" : (r.Result === "Wrong" ? "danger" : "warn");
+      const pill = `<span class="pill ${resClass}">${r.Result}</span>`;
+
+      tr.innerHTML = `
+        <td>${r.QuestionID}</td>
+        <td>${r.Subject || "-"}</td>
+        <td>${r.QuestionType || "-"}</td>
+        <td>${r.QuestionGenre || "-"}</td>
+        <td>${r.Paper || "-"}</td>
+        <td>${r.ChosenOption || ""}</td>
+        <td>${r.CorrectOption || ""}</td>
+        <td>${pill}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    tableCard.classList.remove("hidden");
+  }
+
+  function applyFilters() {
+    const filter = resultFilter.value;
+    const q = searchBox.value.trim().toLowerCase();
+
+    let rows = [...finalData];
+
+    if (filter !== "all") {
+      if (filter === "paper1") {
+        rows = rows.filter(r => (r.Paper || "").toLowerCase().includes("paper 1"));
+      } else if (filter === "paper2") {
+        rows = rows.filter(r => (r.Paper || "").toLowerCase().includes("paper 2"));
+      } else {
+        const wanted = filter.charAt(0).toUpperCase() + filter.slice(1);
+        rows = rows.filter(r => r.Result === wanted);
+      }
+    }
+
+    if (q) {
+      rows = rows.filter(r => {
+        return (
+          (r.QuestionID && r.QuestionID.toLowerCase().includes(q)) ||
+          (r.Subject && r.Subject.toLowerCase().includes(q)) ||
+          (r.QuestionType && r.QuestionType.toLowerCase().includes(q)) ||
+          (r.QuestionGenre && r.QuestionGenre.toLowerCase().includes(q)) ||
+          (r.Paper && r.Paper.toLowerCase().includes(q)) ||
+          (r.Result && r.Result.toLowerCase().includes(q))
+        );
+      });
+    }
+
+    renderTable(rows);
+  }
+
+  function downloadExcel(rows) {
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Results");
+    XLSX.writeFile(wb, "Result_Analytics.xlsx");
+  }
+
+  processBtn.addEventListener("click", async () => {
+    try {
+      const pdfFile = pdfFileInput.files[0];
+      const keyFile = answerKeySelect.value;
+
+      if (!pdfFile) {
+        alert("Please upload a PDF.");
+        return;
+      }
+      if (!keyFile) {
+        alert("Please select an answer key file.");
+        return;
+      }
+
+      setStatus("Reading PDF…");
+      processBtn.disabled = true;
+      downloadBtn.disabled = true;
+
+      const pdfText = await extractPdfText(pdfFile);
+
+      setStatus("Extracting responses from PDF…");
+      const responses = extractResponses(pdfText);
+
+      if (!responses.length) {
+        throw new Error("No responses were detected. Check if PDF text is extractable.");
+      }
+
+      setStatus("Loading answer key Excel…");
+      const keyRowsRaw = await fetchExcelAsJson(keyFile);
+      const keyRows = keyRowsRaw.map(normalizeKeyRow).filter(r => r.QuestionID);
+
+      const keyMap = {};
+      keyRows.forEach(r => { keyMap[r.QuestionID] = r; });
+
+      setStatus("Merging + scoring…");
+      const merged = responses.map(r => {
+        const key = keyMap[r.QuestionID] || {};
+        const correctOpt = key.CorrectOption || "";
+        const chosen = r.ChosenOption || "";
+        const result = computeResult(chosen, correctOpt);
+
+        return {
+          QuestionID: r.QuestionID,
+          Status: r.Status,
+          ChosenOption: chosen,
+          CorrectOption: correctOpt,
+          Result: result,
+          Subject: key.Subject || "",
+          QuestionType: key.QuestionType || "",
+          QuestionGenre: key.QuestionGenre || "",
+          Paper: key.Paper || ""
+        };
+      });
+
+      finalData = merged;
+
+      setStatus("Building dashboards…");
+      updateKPIs(finalData, keyFile);
+      buildCharts(finalData);
+      chartsCard.classList.remove("hidden");
+
+      setStatus("Rendering table…");
+      renderTable(finalData);
+
+      downloadBtn.disabled = false;
+
+      setStatus("Done ✅");
+    } catch (err) {
+      console.error(err);
+      alert("Error: " + err.message);
+      setStatus("Error: " + err.message);
+    } finally {
+      processBtn.disabled = false;
+    }
+  });
+
+  resultFilter.addEventListener("change", applyFilters);
+  searchBox.addEventListener("input", applyFilters);
+
+  downloadBtn.addEventListener("click", () => {
+    downloadExcel(finalData);
+  });
+</script>
+
+</body>
+</html>
